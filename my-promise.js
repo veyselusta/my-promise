@@ -134,3 +134,74 @@ class LLJSPromise {
   }
 
 }
+
+
+
+LLJSPromise.resolve = value => new LLJSPromise(resolve => resolve(value));
+LLJSPromise.reject = value => new LLJSPromise((_, reject) => reject(value));
+
+
+
+
+const fs = require('fs');
+const path = require('path');
+
+const readFile = (filename, encoding) => new LLJSPromise((resolve, reject) => {
+  fs.readFile(filename, encoding, (err, value) => {
+    if (err) {
+      return reject(err);
+    }
+    resolve(value);
+  })
+});
+
+const delay = (timeInMs, value) => new LLJSPromise(resolve => {
+  setTimeout(() => {
+    resolve(value);
+  }, timeInMs);
+});
+
+
+const asyncFn = promiseGeneratorFn => (...args) => {
+  const producer = promiseGeneratorFn(...args);
+
+  const interpreter = (lastValue, wasError) => {
+    const {value, done} = (wasError)
+      ? producer.throw(lastValue)
+      : producer.next(lastValue);
+
+    if (!done) {
+      if (isThenable(value)) {
+        return value.then(
+          resolvedValue => interpreter(resolvedValue),
+          rejectedValue => interpreter(rejectedValue, true)
+        );
+      } else {
+        return interpreter(value);
+      }
+    } else {
+      if (!isThenable(value)) {
+        return LLJSPromise.resolve(value);
+      }
+      return value;
+    }
+  }
+
+  return interpreter();
+}
+
+const doAsyncStuff = asyncFn(function* () {
+  try {
+    const text = yield readFile(path.join(__dirname, 'yourpath'), 'utf8');
+    console.log(`${text.length} characters read`);
+
+    const withoutVowels = yield delay(2000, text.replace(/[aeiou]/g, ''));
+    console.log(withoutVowels.slice(0, 200));
+  } catch (err) {
+    console.error('An error occured!');
+    console.error(err);
+  }
+  console.log('--- All done! ---');
+});
+
+doAsyncStuff();
